@@ -1,0 +1,363 @@
+\documentclass[12pt]{article}
+\usepackage[margin=2cm]{geometry}
+\usepackage{amsmath, amssymb, enumitem}
+\usepackage [english]{babel}
+\usepackage [autostyle, english = american]{csquotes}
+\usepackage{icomma} %no space after commas
+\usepackage{statrep} %SAS code
+\MakeOuterQuote{"}
+\setlength{\parindent}{0pt}
+\frenchspacing %no space after periods
+\usepackage{graphicx}
+\usepackage{hyperref}
+
+\usepackage{array}
+%put photo in same folder, do \includegraphics{"file name"}
+\usepackage{mathtools}
+\DeclarePairedDelimiter{\ceiling}{\lceil}{\rceil}
+
+\newcommand\textline[4][t]{%
+  \par\smallskip\noindent\parbox[#1]{.333\textwidth}{\raggedright#2}%
+  \parbox[#1]{.333\textwidth}{\centering#3}%
+  \parbox[#1]{.333\textwidth}{\raggedleft#4}\par\smallskip%
+}
+\newcommand{\deriv}[2]{\dfrac{\text{d}}{\text{d}#1}\left[#2\right]}
+\newcommand{\parderiv}[2]{\dfrac{\partial}{\partial #1}\left[#2\right]}
+\newcommand{\Var}[1]{\text{Var}\left[#1\right]}
+
+%taken from http://tex.stackexchange.com/questions/55472/how-to-make-text-aligned-left-center-right-in-the-same-line
+\begin{document}
+\textline[t]{Stat 557}{Homework Assignment 3}{Fall 2015}
+\vspace{-0.2cm}
+\begin{center}
+Yeng M. Chang
+\end{center}
+\vspace{0.2cm}
+\begin{enumerate}
+\item \begin{enumerate}[label={(\alph*)}]
+\item Change the table like so:
+\begin{center}
+\begin{tabular}{lcc}
+ \hline
+  & IM Cases & Controls \\
+ \hline
+ Tonsillectomy & 40 & 235 \\
+ No Tonsillectomy & 145 & 420
+\end{tabular}
+\end{center}
+We have 
+\begin{equation*}
+\hat{\phi} = \dfrac{40/145}{235/420} = 0.493030081\text{, }S_{\log(\hat{\phi})} = 0.196297792\text{, } z_{1-\alpha/2} = 1.96\text{,}
+\end{equation*}
+so that a 95\% confidence interval for $\log(\phi)$ is given by
+\begin{equation*}
+\log(\hat{\phi}) \pm 1.96 S_{\log(\hat{\phi})} = (-1.091928763, -0.322441418)\text{.}
+\end{equation*}
+Exponentiate both sides to get $(0.335568637, 0.724378366)$ as an approximate 95\% confidence interval for $\phi$. With 95\% confidence, the odds of getting IM are between 66\% and 28\% less among people who have had their tonsils removed.\par 
+In R, I use the following code for the percentile bootstrap method:
+<<data1a, fig.width=4, fig.height=3,fig.align='center'>>=
+library(boot)
+x <- matrix(c(40, 145, 235, 420), nrow = 2, ncol = 2)
+odds <- function(x, inds){
+odds_matrix <- x[inds,1]/x[inds,2]
+ratio <- odds_matrix[1]/odds_matrix[2]
+return(ratio)
+}
+results <- boot(x, statistic=odds, R=2000)
+boot.ci(results, type = 'perc', index = 1)
+@
+With 95\% confidence, the odds of getting IM are between 50\% less and 100\% greater among people who have had their tonsils removed.
+\newpage 
+\item I use the method of p. 606 in Agresti, equation (16.27). That is, using the probability mass function
+\begin{equation*}
+f(t \mid n_{1+}, n_{+1}, n, \theta) = \dfrac{\displaystyle\binom{n_{1+}}{t} \binom{n-n_{1+}}{n_{+1}-t}\theta^{t}}{\displaystyle\sum\limits_{u=m_{-}}^{m_{+}} \binom{n_{1+}}{u} \binom{n-n_{1+}}{n_{+1}-u}\theta^{u}} 
+\end{equation*}
+find $\theta_0$ (the lower bound of the confidence interval) and $\theta_1$ (the upper bound) such that
+\begin{equation*}
+0.025 = \sum\limits_{t \geq n_{11}}f(t \mid n_{1+}, n_{+1}, n, \theta_1) = \sum\limits_{t \leq n_{11}}f(t \mid n_{1+}, n_{+1}, n, \theta_0)\text{,}
+\end{equation*}
+where $m_{-} = \max(0, n_{1+} + n_{+1}-n)$ and $m_{+} = \min(n_{1+}, n_{+1})$. I start by using Python to generate the necessary polynomial equations with respect to $\theta_0$ and $\theta_1$. For example:
+\begin{verbatim}
+from sympy import binomial, Symbol
+import numpy as np
+def confidence_odds(matrix, alpha):
+    x = Symbol('x')
+    n_11 = matrix[1,1]
+    n_1_plus = matrix.sum(axis = 1)[1] 
+    n_plus_1 = matrix.sum(axis = 0)[1]
+    n = matrix.sum()
+    m_minus = max(0, n_1_plus + n_plus_1 - n)
+    m_plus = min(n_1_plus, n_plus_1)
+    denominator = []
+    for u in range(m_minus, m_plus+1):
+        denominator.append(binomial(n_1_plus, u)*
+        binomial(n-n_1_plus, n_plus_1 - u)*x**u)
+    numerator = []
+    for t in range(n_11, n_1_plus+1):
+        numerator.append(binomial(n_1_plus, t)*
+        binomial(n-n_1_plus, n_plus_1 - t)*x**t)
+    equation = sum(numerator)/sum(denominator) - alpha/2
+    numerator_less_than = []
+    for t in range(0, n_11+1):
+        numerator_less_than.append(binomial(n_1_plus, t)*
+        binomial(n-n_1_plus, n_plus_1 - t)*x**t)
+    equation_2 = sum(numerator_less_than)/sum(denominator) - alpha/2
+    return equation, equation_2
+
+matrix = np.array([[4, 36], [5, 39]])
+confidence_odds(matrix, 0.05)
+\end{verbatim}
+(Lines involving products are split into two lines so as not to be cut off.) Running this program gives me two functions in terms of $x$, where $x = \theta_1$ for the first equation and $\theta_0$ for the second equation. After getting the equations, I run the following code in \texttt{R} for each polynomial I get:
+\begin{verbatim}
+library(rootSolve)
+fun <- function(x) ##insert polynomial in terms of x here
+uniroot(fun, c(0.01, 50)) ##looks between 0.01 and 50 for the roots
+\end{verbatim}
+This gives me roots which occur between 0.01 and 50. I do this fourteen times, two per age table. Using this method, we get the following 95\% confidence intervals for each table:
+\[\begin{array}{ccc}
+\text{Age (in years)} & \text{Confidence Interval for Odds Ratio} & \hat{\phi} \\
+\hline 
+18 & (0.1808937, 2.215413) & 0.664359861592 \\
+19 & (0.03809784, 0.7492263) & 0.207100591716\\
+20 & (0.3926584, 2.199275) & 0.949290060852 \\
+21 & (0.1460894, 0.9426745)& 0.390350877193 \\
+22 & (0.2042759, 2.814585) & 0.811111111111\\
+23 & (0.03487985, 2.1377) & 0.364532019704\\
+24 & (0.1591823, 4.38628) & 0.866666666667
+\end{array}\]
+Using the same idea as I did in (a), I transpose the matrix and compute the odds ratio using $\hat{\phi} = \dfrac{Y_1/(n_1-Y_1)}{Y_2/(n_2-Y_2)}$ (as shown in the table above).
+\item In SAS, I run the following code:
+\begin{Datastep}
+Data set1;
+Input I J K X;
+Label I = Tonsillectomy
+	  J = Disease
+	  K = Age;
+Datalines;
+1 1 1 6
+1 2 1 17
+2 1 1 17
+2 2 1 32
+1 1 2 3
+1 2 2 26
+2 1 2 39 
+2 2 2 70
+1 1 3 12
+1 2 3 34
+2 1 3 29
+2 2 3 78
+1 1 4 8
+1 2 4 48
+2 1 4 38
+2 2 4 89
+1 1 5 5
+1 2 5 48
+2 1 5 38
+2 2 5 73
+1 1 6 2
+1 2 6 29
+2 1 6 7
+2 2 6 37
+1 1 7 4
+1 2 7 36
+2 1 7 5
+2 2 7 39
+run;
+proc sort data=set1; by K I J; run;
+\end{Datastep}
+\begin{Sascode}[store=code1c]
+Proc print data=set1;
+	title 'The Mantel-Haenszel IM Data';
+	run;
+Proc format;
+	value IFMT 1='Tonsillectomy'
+		       2='No Tonsillectomy';
+	value JFMT 1='IM Cases'
+	           2='Controls';
+	value KFMT 1='18'
+	           2='19'
+	           3='20'
+	           4='21'
+	           5='22'
+	           6='23'
+	           7='24';
+run;	           
+Proc freq data=set1;
+	Tables K*I*J / CHISQ ALL NOPERCENT NOROW;
+	Weight X;
+	Format I IFMT. J JFMT. K KFMT.;
+RUN;
+\end{Sascode}
+\Listing[store=code1c,objects=Freq.Table1.CommonRelRisks
+]{codept1c}
+The M-H estimator for the odds ratio is 0.4404, with a 95\% confidence interval of $(0.3001, 0.6463)$. With 95\% confidence, the odds of getting IM are between 70\% less and 35.3\% less among people who have their tonsils removed.
+\item I run the following code in SAS:
+\begin{Sascode}[store=code1d]
+Proc freq data=set1;
+Tables K*I*J ;
+EXACT COMOR;
+Weight X;
+Format I IFMT. J JFMT. K KFMT.;
+RUN;
+\end{Sascode}
+\Listing[store=code1d,objects=Freq.Table1.CommonOddsRatioCL
+]{codept1d}
+The exact confidence interval is given by $(0.2927, 0.6539)$. With 95\% confidence, the odds of getting IM are between 70.7\% less and 35.3\% less among people who have their tonsils removed. The exact confidence interval is quite different from the confidence interval in (a). It is essentially the confidence interval in (a) translated left. 
+\item 
+\item \begin{enumerate}[label={(\roman*)}]
+\item \Listing[store=code1d,objects=Freq.Table1.BreslowDayTest
+]{codept1fi}
+At the 5\% level of significance, we do not have evidence that the odds ratios are not homogeneous. 
+\item 
+\end{enumerate}
+\item In R:
+<<data1g, fig.width=4, fig.height=3,fig.align='center'>>=
+array <- array(c(6, 17, 17, 32, 3, 39, 26, 70, 12, 29, 34, 78, 8, 38, 
+48, 89, 5, 10, 45, 73, 2, 7, 29, 37, 4, 5, 36, 39), c(2, 2, 7))
+mantelhaen.test(array, conf.level=0.95)
+@
+At the 5\% level of significance, we have evidence that tonsillectomy rates differ for IM cases and controls within every age group.
+\end{enumerate}
+\item \begin{enumerate}[label={(\alph*)}]
+\item Assuming ab corresponds to Tall/Cut, aB corresponds to Tall/Potato, Ab corresponds to Dwarf/Cut, and AB corresponds to Dwarf/Potato, here is the corresponding R code:
+<<data2a, fig.width=4, fig.height=3,fig.align='center'>>=
+data <- matrix(c(926,467,693,288,151,234,293,150,219,104,47,70),nrow=3,ncol=4)
+proportions <- matrix(rep(c(9/16,3/16,3/16,1/16),3),byrow=T,nrow=3,ncol=4)
+row_totals <- matrix(c(rep(sum(data[1,]),4), rep(sum(data[2,]),4), 
+rep(sum(data[3,]),4)), nrow = 3, ncol = 4, byrow = T)
+expected <- row_totals * proportions
+sum(data*log(data/expected))*2 ##deviance
+pchisq(sum(data*log(data/expected))*2, df = 1, lower.tail = FALSE)
+@
+Degrees of freedom are 1, and the $p$-value is $0.076$, so at the 5\% level of significance, we do not have evidence that the data follow the general alternative.
+\item Degrees of freedom are 2. Using maximum likelihood estimation, suppose $Y_i = (Y_{i1}, \dots, Y_{i4})$ is a single row and $n = \sum_{j}Y_{ij}$. Then
+\begin{equation*}
+L(p_a, p_b) = \dfrac{n!}{\prod_{j}Y_{ij}!}p_{a}^{Y_{i1}+Y_{i3}}p_b^{Y_{i1}+Y_{i2}}(1-p_a)^{Y_{i2}+Y_{i4}}(1-p_b)^{Y_{i3}+Y_{i4}}\text{.}
+\end{equation*}
+Setting $c = \dfrac{n!}{\prod_{j}Y_{ij}!}$, we have
+\begin{equation*}
+\ell(p_a, p_b) = \log(c)+(Y_{i1}+Y_{i3})\log(p_{a})+(Y_{i1}+Y_{i2})\log(p_b)+(Y_{i2}+Y_{i4})\log(1-p_a)+(Y_{i3}+Y_{i4})\log(1-p_b)\text{.}
+\end{equation*}
+Taking the first partial with respect to $p_a$ and setting it equal to $0$, it can be shown that 
+\begin{equation*}
+p_a = \dfrac{Y_{i1}+Y_{i3}}{n}\text{.}
+\end{equation*}
+Similarly,
+\begin{equation*}
+p_b = \dfrac{Y_{i1}+Y_{i2}}{n}\text{.}
+\end{equation*}
+Using R to compute these quantities, we have the following:
+<<data2b, fig.width=4, fig.height=3,fig.align='center'>>=
+proportions <- matrix(0, nrow = 3, ncol = 4)
+for (i in 1:3){
+n <- sum(data[i,])
+p_a <- (data[i,1]+data[i,3])/n
+p_b <- (data[i,1]+data[i,2])/n
+proportions[i,1] <- p_a * p_b
+proportions[i,2] <- (1-p_a)*p_b
+proportions[i,3] <- p_a * (1-p_b)
+proportions[i,4] <- (1-p_a)*(1-p_b)
+cat('Region', i, ': ','\n')
+cat('p_a: ',p_a, '\n')
+cat('p_b: ',p_b, '\n')
+}
+proportions
+expected <- row_totals * proportions
+sum(data*log(data/expected))*2 ##deviance
+pchisq(sum(data*log(data/expected))*2, df = 2, lower.tail = FALSE)
+@
+Degrees of freedom are 2, and the $p$-value is $0.57$, so at the 5\% level of significance, we do not have evidence that the data follow the general alternative.
+\newpage 
+\item Since each row has an independent multinomial distribution, we can write in particular (where $n_i$ is the total number in the $i$th row)
+\begin{align*}
+L(p_a, p_b) &= \dfrac{\prod_{i}n_i!}{\prod_{i}\prod_{j}Y_{ij}!}\prod_{i}p_{a}^{Y_{i1}+Y_{i3}}p_b^{Y_{i1}+Y_{i2}}(1-p_a)^{Y_{i2}+Y_{i4}}(1-p_b)^{Y_{i3}+Y_{i4}} \\
+&= \dfrac{\prod_{i}n_i!}{\prod_{i}\prod_{j}Y_{ij}!}p_a^{\sum_{i}(Y_{i1}+Y_{i3})}p_b^{\sum_{i}(Y_{i1}+Y_{i2})}(1-p_a)^{\sum_{i}(Y_{i2}+Y_{i4})}(1-p_b)^{\sum_{i}(Y_{i3}+Y_{i4})} \\
+&\propto p_a^{\sum_{i}(Y_{i1}+Y_{i3})}p_b^{\sum_{i}(Y_{i1}+Y_{i2})}(1-p_a)^{\sum_{i}(Y_{i2}+Y_{i4})}(1-p_b)^{\sum_{i}(Y_{i3}+Y_{i4})}\text{.}
+\end{align*}
+Furthermore,
+\begin{equation*}
+\dfrac{\partial \ell}{\partial p_a} = \dfrac{\sum_{i}(Y_{i1}+Y_{i3})}{p_a} - \dfrac{\sum_{i}(Y_{i2}+Y_{i4})}{1-p_a} = 0
+\end{equation*}
+implies that
+\begin{equation*}
+p_a = \dfrac{\sum_{i}(Y_{i1}+Y_{i3})}{N}
+\end{equation*}
+where $N = \sum_{i,j}Y_{ij}$. Similarly,
+\begin{equation*}
+p_b =  \dfrac{\sum_{i}(Y_{i1}+Y_{i2})}{N}\text{.}
+\end{equation*}
+In R:
+<<data2c, fig.width=4, fig.height=3,fig.align='center'>>=
+proportions <- matrix(0, nrow = 3, ncol = 4)
+N <- sum(data)
+p_a <- (sum(data[,1])+sum(data[,3]))/N
+p_b <- (sum(data[,1])+sum(data[,2]))/N
+for (i in 1:3){
+proportions[i,1] <- p_a * p_b
+proportions[i,2] <- (1-p_a)*p_b
+proportions[i,3] <- p_a * (1-p_b)
+proportions[i,4] <- (1-p_a)*(1-p_b)
+cat('Region', i, ': ','\n')
+cat('p_a: ',p_a, '\n')
+cat('p_b: ',p_b, '\n')
+}
+expected <- row_totals * proportions
+sum(data*log(data/expected))*2 ##deviance
+pchisq(sum(data*log(data/expected))*2, df = 3, lower.tail = FALSE)
+@
+At the 5\% level of significance, we do not have evidence that the data follow the general alternative.
+\item 
+\begin{center}
+\begin{tabular}{llll}
+\textbf{Comparison} & \textbf{d.f.} & \textbf{deviance value} & $p$-value \\
+\hline
+Model A vs. General & 1 & 3.143858 & $0.076$ \\
+Model B vs. General & 2 & 1.133048 & $0.567$ \\
+Model C vs. General & 3 & 1.628537 &  $0.653$
+\end{tabular}
+\end{center}
+\item It looks like Model C has the best fit to the data.
+\end{enumerate}
+\item We have $\ell(\mu) = -n\mu + \log(\mu)\sum Y_i - \sum\log(Y_i!)$. The score function is
+\begin{equation*}
+u = \dfrac{\partial \ell}{\partial \mu} = -n + \dfrac{\sum Y_i}{\mu} = \dfrac{\sum Y_i - n\mu}{\mu}\text{.}
+\end{equation*}
+The second partial is $\dfrac{-\sum Y_i}{\mu^2}$, giving an expected information of $\sum E[Y_i] / \mu^2 = n/\mu$. Thus,
+\begin{equation*}
+\mu^{(1)} = \mu^{(0)} + \dfrac{\mu^{(0)}}{n}\left(\dfrac{\sum y_i - n\mu^{(0)}}{\mu^{(0)}}\right) = \dfrac{\sum_{i}y_i}{n} = \bar{y}\text{.}
+\end{equation*}
+Hence the algorithm converges. Using Newton-Raphson, 
+\begin{equation*}
+\mu^{(1)} = \mu^{(0)} + \dfrac{(\mu^{(0)})^2}{\sum{Y_i}}\left(\dfrac{\sum Y_i - n\mu^{(0)}}{\mu^{(0)}}\right) =  \mu^{(0)} + \dfrac{\mu^{(0)}}{\bar{y}}\left(\bar{y}-\mu^{(0)}\right) = 2\mu^{(0)} + \left(\mu^{(0)}\right)^2/\bar{y}\text{.} 
+\end{equation*}
+\item $f(y, k, \mu) = \exp\left[\underbrace{\log\left(\dfrac{\Gamma(y+k)}{\Gamma(k)\Gamma(y+1)}\right)}_{c(y, \theta)}+k\underbrace{\log\left(\dfrac{k}{y+k}\right)}_{-b(\theta)}+y\underbrace{\log\left(\dfrac{\mu}{\mu+k}\right)}_{\theta}\right]$. If $k$ is not known, then $f$ is not of the exponential family.
+\item \begin{enumerate}[label={(\alph*)}]
+\item 
+<<data5a, fig.width=4, fig.height=3,fig.align='center'>>=
+teggll <- read.table("C:/Users/Yeng Chang/Desktop/Stat 557/Homework 3/teggll.dat", 
+header = FALSE, col.names=c("Box", "Temperature", "Females", "Males", "Total"))
+teggll$female_hatching[teggll$Females >= 1] <- 1
+teggll$female_hatching[teggll$Females < 1] <- 0
+teggll$female_hatching <- factor(teggll$female_hatching)
+tegl <- glm(female_hatching ~ Temperature, data = teggll, 
+weights = Females, x = TRUE, trace = TRUE, family = binomial(link = logit))
+summary(tegl)
+@
+We have $\hat{\beta}_0 = 1.84$ and $\hat{\beta}_1 = 0.29$, with standard errors $1.497 \cdot 10^{6}$ and $5.256 \cdot 10^{4}$ respectively.
+\item 
+<<data5b, fig.width=4, fig.height=3,fig.align='center'>>=
+b <- coef(tegl)
+bcov <- vcov(tegl)
+bse <- sqrt(diag(bcov))
+z975 <- qnorm(0.975)
+bci <- matrix(c(b-z975*bse, b+z975*bse), ncol=2)
+bci
+
+or <- exp(b)
+or
+cior <- exp(bci)
+cior
+@
+\end{enumerate}
+\end{enumerate}
+\end{document}
